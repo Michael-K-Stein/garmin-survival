@@ -1,0 +1,79 @@
+name: release
+
+# Tag a commit to cut a release:
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# The .iq lands on the GitHub release, ready to upload to the Connect IQ
+# store. Nothing here talks to Garmin - store submission stays manual, which
+# is what you want for something a human reviews anyway.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Cache the Connect IQ SDK
+        uses: actions/cache@v4
+        with:
+          path: build/sdk
+          key: connectiq-sdk-${{ hashFiles('tools/build.sh') }}
+
+      # A release signed with the wrong key is worse than no release: the store
+      # binds the app to the key that first uploaded it and will not take an
+      # update signed with another. tools/build.sh happily generates a throwaway
+      # key when none is present, so the secret is checked before anything runs.
+      - name: Restore the developer key
+        env:
+          CIQ_DEVELOPER_KEY: ${{ secrets.CIQ_DEVELOPER_KEY }}
+        run: |
+          if [ -z "$CIQ_DEVELOPER_KEY" ]; then
+            echo "::error::the CIQ_DEVELOPER_KEY secret is not set - see README"
+            exit 1
+          fi
+          mkdir -p build
+          printf '%s' "$CIQ_DEVELOPER_KEY" | base64 -d > build/developer_key.der
+          if [ ! -s build/developer_key.der ]; then
+            echo "::error::CIQ_DEVELOPER_KEY did not decode to a key"
+            exit 1
+          fi
+
+      - name: Check the code against its own invariants
+        run: tools/verify.sh
+
+      # The strict type check is the half of the test suite that needs the SDK,
+      # and --release turns it off, so a debug build has to pass first.
+      - name: Build for the Venu 2 family
+        run: tools/build.sh --fetch-sdk
+
+      - name: Package for the store
+        run: tools/package.sh
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: garmin-survival-iq
+          path: build/Timberline.iq
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Timberline ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            build/Timberline.iq build/Timberline-venu2.prg

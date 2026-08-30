@@ -1,0 +1,35 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Cache the Connect IQ SDK
+        uses: actions/cache@v4
+        with:
+          path: build/sdk
+          key: connectiq-sdk-${{ hashFiles('tools/build.sh') }}
+
+      - name: Check the code against its own invariants
+        run: tools/verify.sh
+
+      - name: Build for the Venu 2 family
+        run: tools/build.sh --fetch-sdk
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: garmin-survival-prg
+          path: build/*.prg
+          if-no-files-found: error
