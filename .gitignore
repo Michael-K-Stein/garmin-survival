@@ -1,0 +1,20 @@
+# Build output and generated device configs.
+build/
+bin/
+gen/
+*.prg
+*.prg.debug.xml
+*.iq
+
+# Developer signing keys are personal - never commit one.
+*.der
+*.pem
+
+# Editor / IDE / OS
+.settings/
+.project
+.vscode/
+.idea/
+.DS_Store
+__pycache__/
+*.pyc

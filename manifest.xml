@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+    Timberline - a tap-to-move idle automation game for the Venu 2 family.
+-->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application entry="TimberlineApp" id="cf404b518e424d3888cb69bda24bd740" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.2.0" name="@Strings.AppName" type="watch-app">
+        <iq:products>
+            <iq:product id="venu2"/>
+        </iq:products>
+        <iq:permissions/>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>
