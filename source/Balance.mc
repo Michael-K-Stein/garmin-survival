@@ -39,7 +39,11 @@ module Balance {
     //! Cash for one unit sold raw at the yard.
     const RESOURCE_VALUE = [6.0, 15.0, 40.0, 110.0];
     const NODE_MAX = [20, 24, 30, 36];
-    const NODE_RESPAWN = [30.0, 40.0, 55.0, 70.0];
+    //! Chosen so 3 nodes' sustained regrowth (NODE_MAX / NODE_RESPAWN, summed)
+    //! roughly matches what a full 6-worker crew plus the player can gather
+    //! at level-0 stats - see tools/simulate_economy.py, which enforces this
+    //! against demand so hiring past the node ceiling stops paying off.
+    const NODE_RESPAWN = [11.0, 14.0, 20.0, 25.0];
     //! Cash to open the area. The first one is free.
     const AREA_UNLOCK = [0.0, 2500.0, 60000.0, 900000.0];
 
@@ -67,12 +71,15 @@ module Balance {
     const PLAYER_COLLECT = 2.0;         // units/sec at level 0
     const PLAYER_COLLECT_STEP = 0.30;
     //! Fraction faster every node on every board refills, per level.
-    const PLAYER_REGROW_STEP = 0.15;
+    const PLAYER_REGROW_STEP = 0.20;
 
     const COST_SPEED = 120.0;
     const COST_CAPACITY = 150.0;
     const COST_COLLECT = 100.0;
-    const COST_REGROW = 400.0;
+    //! Priced against COST_WORKER_SPEED, not COST_SPEED: regrowth raises the
+    //! node ceiling every gatherer draws against, so its payoff compounds
+    //! with crew size the same way a crew-wide upgrade does.
+    const COST_REGROW = 180.0;
 
     // --- Workers --------------------------------------------------------
     //! Per area, so a fully staffed operation is 24 people.

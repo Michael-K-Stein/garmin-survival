@@ -35,8 +35,9 @@ def floats(raw):
 class Sim:
     """The same arithmetic the Monkey C does, in the same order."""
 
-    def __init__(self, c):
+    def __init__(self, c, node_count):
         self.c = c
+        self.node_count = node_count
         self.cash = 0.0
         self.unlocked = [True, False, False, False]
         self.machine = [0, 0, 0, 0]
@@ -47,6 +48,7 @@ class Sim:
         self.lvl_collect = 0
         self.lvl_wspeed = 0
         self.lvl_wcapacity = 0
+        self.lvl_regrow = 0
 
     # --- stats ----------------------------------------------------------
     def worker_speed(self):
@@ -70,6 +72,16 @@ class Sim:
     def cycle_rate(self, speed, capacity, collect):
         """Units per second for one gatherer doing round trips."""
         return capacity / (self.c["OFFLINE_TRIP_PX"] / speed + capacity / collect)
+
+    def regrow_boost(self):
+        return 1 + self.c["PLAYER_REGROW_STEP"] * self.lvl_regrow
+
+    def node_supply_rate(self, area):
+        """The hard ceiling on that area's output: nodes regrowing, not
+        gatherers fetching. Demand past this is wasted cash - a crew or
+        speed upgrade only pays off below it."""
+        return (self.node_count * self.c["NODE_MAX"][area]
+                / self.c["NODE_RESPAWN"][area]) * self.regrow_boost()
 
     def machine_rate(self, area):
         level = self.machine[area]
@@ -104,6 +116,8 @@ class Sim:
              lambda: setattr(self, "lvl_wspeed", self.lvl_wspeed + 1)),
             (self.cost(self.c["COST_WORKER_CAPACITY"], self.lvl_wcapacity), "crew carry",
              lambda: setattr(self, "lvl_wcapacity", self.lvl_wcapacity + 1)),
+            (self.cost(self.c["COST_REGROW"], self.lvl_regrow), "regrowth",
+             lambda: setattr(self, "lvl_regrow", self.lvl_regrow + 1)),
         ]
         for a in range(4):
             if not self.unlocked[a]:
@@ -144,6 +158,8 @@ class Sim:
             if a == 0:
                 gathered += self.cycle_rate(self.player_speed(), self.player_capacity(),
                                             self.player_collect())
+            # Demand cannot exceed what the area's nodes can regrow.
+            gathered = min(gathered, self.node_supply_rate(a))
             self.stock[a] += gathered
             processed = min(self.machine_rate(a), self.stock[a])
             self.stock[a] -= processed
@@ -173,8 +189,9 @@ def main():
             continue
         c[key] = nums if "[" in value else nums[0]
     c["WORKER_MAX"] = int(c["WORKER_MAX"])
+    node_count = len(c["NODES"]) // 2
 
-    sim = Sim(c)
+    sim = Sim(c, node_count)
     reached = {0: 0}
     for second in range(1, HORIZON_SECS + 1):
         sim.step()

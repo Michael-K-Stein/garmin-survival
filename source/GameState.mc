@@ -500,6 +500,7 @@ class GameState {
         var speed = workerSpeed();
         var capacity = workerCapacity();
         var collect = workerCollect();
+        var boost = regrowBoost();
 
         for (var i = 0; i < areas.size(); i += 1) {
             var board = areas[i];
@@ -508,6 +509,13 @@ class GameState {
             }
             var gathered = board.crewRate(speed, capacity, collect) * elapsed
                 * Balance.OFFLINE_EFFICIENCY;
+            // A crew's demand is uncapped, but the nodes they draw from are
+            // not - offline income must respect the same ceiling onscreen
+            // play does, or leaving the app idle out-earns playing it.
+            var sustained = board.nodeSupplyRate(boost) * elapsed;
+            if (gathered > sustained) {
+                gathered = sustained;
+            }
             var available = gathered + board.stock;
             var processed = board.machine.rate() * elapsed;
             if (processed > available) {

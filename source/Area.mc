@@ -142,6 +142,20 @@ class Area {
         return (stock * unitValue()).toDouble();
     }
 
+    //! The most this board's nodes can sustain, units/sec, regardless of how
+    //! many gatherers are drawing on them - a crew past this point is just
+    //! standing around waiting for a node to refill.
+    function nodeSupplyRate(regrowBoost as Float) as Float {
+        var total = 0.0;
+        for (var i = 0; i < nodes.size(); i += 1) {
+            var node = nodes[i];
+            if (node.respawnSecs > 0.0) {
+                total += node.maxQuantity / node.respawnSecs;
+            }
+        }
+        return total * regrowBoost;
+    }
+
     //! Units per second the crew brings in, from their round-trip cycle time.
     //! The same formula prices offline progress, so what the player watches
     //! and what they wake up to agree.
