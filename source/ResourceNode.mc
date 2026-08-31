@@ -59,11 +59,13 @@ class ResourceNode {
         return got;
     }
 
-    function tick(dt as Float) as Void {
+    //! `boost` is a regrowth speed multiplier: 1.0 is the base rate, higher
+    //! is faster, from the player's regrowth upgrade.
+    function tick(dt as Float, boost as Float) as Void {
         if (hasStock()) {
             return;
         }
-        mRegrow -= dt;
+        mRegrow -= dt * boost;
         if (mRegrow <= 0.0) {
             mRegrow = 0.0;
             quantity = maxQuantity.toFloat();

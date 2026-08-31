@@ -21,6 +21,7 @@ class GameState {
     public var lvlSpeed as Number = 0;
     public var lvlCapacity as Number = 0;
     public var lvlCollect as Number = 0;
+    public var lvlRegrow as Number = 0;
 
     //! Crew upgrades are bought once and apply to every area, because per-
     //! worker configuration is exactly the fiddling this game is avoiding.
@@ -71,6 +72,11 @@ class GameState {
         return Balance.PLAYER_COLLECT * (1.0 + Balance.PLAYER_COLLECT_STEP * lvlCollect);
     }
 
+    //! Node regrowth speed multiplier: 1.0 at level 0, faster from there.
+    function regrowBoost() as Float {
+        return 1.0 + Balance.PLAYER_REGROW_STEP * lvlRegrow;
+    }
+
     function workerSpeed() as Float {
         return Balance.WORKER_SPEED * (1.0 + Balance.WORKER_SPEED_STEP * lvlWorkerSpeed);
     }
@@ -109,6 +115,10 @@ class GameState {
 
     function costCollect() as Double {
         return curve(Balance.COST_COLLECT, lvlCollect, Balance.COST_GROWTH);
+    }
+
+    function costRegrow() as Double {
+        return curve(Balance.COST_REGROW, lvlRegrow, Balance.COST_GROWTH);
     }
 
     //! Priced off the whole payroll, so a fifth area starts out expensive to
@@ -160,6 +170,15 @@ class GameState {
         }
         lvlCollect += 1;
         Events.emit(Events.UPGRADE_PURCHASED, lvlCollect.toDouble());
+        return true;
+    }
+
+    function buyRegrow() as Boolean {
+        if (!spend(costRegrow())) {
+            return false;
+        }
+        lvlRegrow += 1;
+        Events.emit(Events.UPGRADE_PURCHASED, lvlRegrow.toDouble());
         return true;
     }
 
@@ -294,11 +313,12 @@ class GameState {
         var speed = workerSpeed();
         var capacity = workerCapacity();
         var collect = workerCollect();
+        var boost = regrowBoost();
         var earned = 0.0d;
         for (var i = 0; i < areas.size(); i += 1) {
             var board = areas[i];
             if (board.unlocked) {
-                earned += board.tick(dt, speed, capacity, collect);
+                earned += board.tick(dt, speed, capacity, collect, boost);
             }
         }
         if (earned > 0.0d) {
@@ -366,6 +386,7 @@ class GameState {
             "spd" => lvlSpeed,
             "cap" => lvlCapacity,
             "col" => lvlCollect,
+            "reg" => lvlRegrow,
             "wspd" => lvlWorkerSpeed,
             "wcap" => lvlWorkerCapacity,
             "area" => current,
@@ -410,6 +431,7 @@ class GameState {
         lvlSpeed = readNumber(data, "spd", 0);
         lvlCapacity = readNumber(data, "cap", 0);
         lvlCollect = readNumber(data, "col", 0);
+        lvlRegrow = readNumber(data, "reg", 0);
         lvlWorkerSpeed = readNumber(data, "wspd", 0);
         lvlWorkerCapacity = readNumber(data, "wcap", 0);
         lastSeen = readNumber(data, "seen", 0);
@@ -517,6 +539,7 @@ class GameState {
         lvlSpeed = 0;
         lvlCapacity = 0;
         lvlCollect = 0;
+        lvlRegrow = 0;
         lvlWorkerSpeed = 0;
         lvlWorkerCapacity = 0;
         current = Balance.FOREST;

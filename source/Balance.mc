@@ -66,10 +66,13 @@ module Balance {
     const PLAYER_CAPACITY_STEP = 10;
     const PLAYER_COLLECT = 2.0;         // units/sec at level 0
     const PLAYER_COLLECT_STEP = 0.30;
+    //! Fraction faster every node on every board refills, per level.
+    const PLAYER_REGROW_STEP = 0.15;
 
     const COST_SPEED = 120.0;
     const COST_CAPACITY = 150.0;
     const COST_COLLECT = 100.0;
+    const COST_REGROW = 400.0;
 
     // --- Workers --------------------------------------------------------
     //! Per area, so a fully staffed operation is 24 people.

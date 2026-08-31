@@ -5,10 +5,11 @@ import Toybox.WatchUi;
 //! The four management pages, swiped between left and right.
 module Page {
     const PLAYER = 0;
-    const CREW = 1;
-    const MACHINE = 2;
-    const OPTIONS = 3;
-    const COUNT = 4;
+    const REGROW = 1;
+    const CREW = 2;
+    const MACHINE = 3;
+    const OPTIONS = 4;
+    const COUNT = 5;
 }
 
 //! Everything you spend money on. One page per category, at most three rows
@@ -83,6 +84,8 @@ class ManageView extends WatchUi.View {
             } else {
                 done = game.buyCollect();
             }
+        } else if (mPage == Page.REGROW) {
+            done = game.buyRegrow();
         } else if (mPage == Page.CREW) {
             if (index == 0) {
                 done = game.hireWorker();
@@ -164,6 +167,9 @@ class ManageView extends WatchUi.View {
         if (mPage == Page.PLAYER || game == null) {
             return "YOU";
         }
+        if (mPage == Page.REGROW) {
+            return "NODES";
+        }
         if (mPage == Page.CREW) {
             return "CREW - " + game.area().name();
         }
@@ -182,6 +188,14 @@ class ManageView extends WatchUi.View {
                     game.costCapacity(), game),
                 row("GATHER", Fmt.rate(game.playerCollect().toDouble()) + "/s",
                     game.costCollect(), game)
+            ] as Array<Array<Object> >;
+        }
+
+        if (mPage == Page.REGROW) {
+            return [
+                row("REGROWTH", "Lv " + game.lvlRegrow.toString() + " - "
+                    + Fmt.rate(game.regrowBoost().toDouble()) + "x",
+                    game.costRegrow(), game)
             ] as Array<Array<Object> >;
         }
 

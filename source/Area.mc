@@ -177,9 +177,9 @@ class Area {
     //! Advance the nodes, the crew and the machine. Returns the cash the
     //! machine earned this step, which the caller banks.
     function tick(dt as Float, speed as Float, capacity as Number,
-                  collect as Float) as Double {
+                  collect as Float, regrowBoost as Float) as Double {
         for (var i = 0; i < nodes.size(); i += 1) {
-            nodes[i].tick(dt);
+            nodes[i].tick(dt, regrowBoost);
         }
         for (var i = 0; i < crew.size(); i += 1) {
             var worker = crew[i];
