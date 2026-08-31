@@ -68,12 +68,17 @@ class Machine {
     }
 
     //! Credit `units` to the batch counter, minting product as batches finish.
+    //! Uses division rather than looping per batch: after a long stretch
+    //! offline, a leveled-up machine can have thousands of batches to
+    //! process at once, and a loop over each one trips the watchdog.
     function absorb(units as Float) as Void {
         batch += units;
-        while (batch >= Balance.MACHINE_BATCH) {
-            batch -= Balance.MACHINE_BATCH;
-            made += Balance.MACHINE_YIELD;
-            Events.emit(Events.MACHINE_COMPLETED, Balance.MACHINE_YIELD.toDouble());
+        if (batch >= Balance.MACHINE_BATCH) {
+            var batches = Math.floor(batch / Balance.MACHINE_BATCH).toNumber();
+            batch -= batches * Balance.MACHINE_BATCH;
+            var yielded = batches * Balance.MACHINE_YIELD;
+            made += yielded;
+            Events.emit(Events.MACHINE_COMPLETED, yielded.toDouble());
         }
     }
 
