@@ -8,8 +8,9 @@ module Page {
     const REGROW = 1;
     const CREW = 2;
     const MACHINE = 3;
-    const OPTIONS = 4;
-    const COUNT = 5;
+    const CONTRACT = 4;
+    const OPTIONS = 5;
+    const COUNT = 6;
 }
 
 //! Everything you spend money on. One page per category, at most three rows
@@ -121,10 +122,15 @@ class ManageView extends WatchUi.View {
             WatchUi.requestUpdate();
             return true;
         }
-        // Erasing a save is the one thing here worth a second question.
+        // Moving camp throws away everything on the board, so it asks.
+        if (!game.canPrestige()) {
+            Haptics.deny();
+            return false;
+        }
         WatchUi.pushView(
-            new WatchUi.Confirmation("Wipe save?"),
-            new WipeDelegate(),
+            new WatchUi.Confirmation("Move camp? +"
+                + game.prestigeGain().toString() + " legacy"),
+            new PrestigeDelegate(),
             WatchUi.SLIDE_UP);
         return true;
     }
@@ -152,6 +158,8 @@ class ManageView extends WatchUi.View {
 
         if (mPage == Page.MACHINE) {
             drawMachineDetail(dc, game);
+        } else if (mPage == Page.CONTRACT) {
+            drawContract(dc, game);
         }
 
         dc.setColor(Theme.CASH, Graphics.COLOR_TRANSPARENT);
@@ -172,6 +180,13 @@ class ManageView extends WatchUi.View {
         }
         if (mPage == Page.CREW) {
             return "CREW - " + game.area().name();
+        }
+        if (mPage == Page.CONTRACT) {
+            if (game.contractsFinished()) {
+                return "CONTRACTS";
+            }
+            return "CONTRACT " + (game.contractsDone + 1).toString() + "/"
+                + game.contractCount().toString();
         }
         if (mPage == Page.OPTIONS) {
             return "OPTIONS";
@@ -214,11 +229,19 @@ class ManageView extends WatchUi.View {
             ] as Array<Array<Object> >;
         }
 
+        if (mPage == Page.CONTRACT) {
+            // The contract page is a readout, not a shop - it draws itself.
+            return [] as Array<Array<Object> >;
+        }
+
         if (mPage == Page.OPTIONS) {
             // Free rows: the cost column is empty and the slab is always live.
+            var camp = game.canPrestige()
+                ? "+" + game.prestigeGain().toString() + " legacy"
+                : Fmt.cash(game.prestigeNeeded()) + " lifetime";
             return [
                 ["HAPTICS", game.haptics ? "on" : "off", 0.0d, true] as Array<Object>,
-                ["WIPE SAVE", "erase everything", 0.0d, true] as Array<Object>
+                ["MOVE CAMP", camp, 0.0d, game.canPrestige()] as Array<Object>
             ] as Array<Array<Object> >;
         }
 
@@ -275,6 +298,7 @@ class ManageView extends WatchUi.View {
                 + machine.product(), Graphics.TEXT_JUSTIFY_CENTER);
             dc.drawText(Layout.cx, y + Layout.s(26), Graphics.FONT_XTINY,
                 "and sells itself", Graphics.TEXT_JUSTIFY_CENTER);
+            drawMastery(dc, here);
             return;
         }
         dc.drawText(Layout.cx, y, Graphics.FONT_XTINY,
@@ -287,6 +311,72 @@ class ManageView extends WatchUi.View {
         dc.setColor(Theme.TEXT_DIM, Graphics.COLOR_TRANSPARENT);
         dc.drawText(Layout.cx, y + Layout.s(58), Graphics.FONT_XTINY,
             machine.made.toString() + " " + machine.product() + " made",
+            Graphics.TEXT_JUSTIFY_CENTER);
+        drawMastery(dc, here);
+    }
+
+    //! How well this ground is known. It is not for sale at any price, only
+    //! worked for, so it sits under the machine page's numbers rather than
+    //! among the slabs.
+    private function drawMastery(dc as Dc, here as Area) as Void {
+        var y = mRowY[2] + Layout.s(6);
+        dc.setColor(Theme.nodeMain(here.id), Graphics.COLOR_TRANSPARENT);
+        dc.drawText(Layout.cx, y, Graphics.FONT_XTINY,
+            "MASTERY " + here.mastery.toString() + " - x"
+            + Fmt.rate(here.masteryBonus().toDouble()),
+            Graphics.TEXT_JUSTIFY_CENTER);
+        var bar = Layout.fitRow(y + Layout.s(26), Layout.s(8), Layout.s(52));
+        Theme.bar(dc, bar[0], y + Layout.s(26), bar[1], Layout.s(8),
+            here.masteryProgress(), Theme.nodeMain(here.id), Theme.PANEL_HI);
+    }
+
+    //! The open contract: what it is, how far along it is, what it pays. No
+    //! slab, because there is nothing here to buy - the point of the page is
+    //! that there is always a next thing to be working toward.
+    private function drawContract(dc as Dc, game as GameState) as Void {
+        var y = mRowY[0];
+        dc.setColor(Theme.TEXT, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(Layout.cx, y, Graphics.FONT_SMALL, game.contractName(),
+            Graphics.TEXT_JUSTIFY_CENTER);
+
+        if (game.contractsFinished()) {
+            dc.setColor(Theme.TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(Layout.cx, y + Layout.s(38), Graphics.FONT_XTINY,
+                "every one of them", Graphics.TEXT_JUSTIFY_CENTER);
+            drawLegacyLine(dc, game, mRowY[2]);
+            return;
+        }
+
+        var have = game.contractProgress();
+        var want = game.contractTarget();
+        var text = game.contractIsCash()
+            ? Fmt.cash(have.toDouble()) + " / " + Fmt.cash(want.toDouble())
+            : have.toNumber().toString() + " / " + want.toNumber().toString();
+
+        dc.setColor(Theme.TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(Layout.cx, y + Layout.s(36), Graphics.FONT_XTINY, text,
+            Graphics.TEXT_JUSTIFY_CENTER);
+
+        var bar = Layout.fitRow(y + Layout.s(70), Layout.s(10), Layout.s(40));
+        Theme.bar(dc, bar[0], y + Layout.s(70), bar[1], Layout.s(10),
+            (want > 0.0) ? have / want : 0.0, Theme.CASH, Theme.PANEL_HI);
+
+        dc.setColor(Theme.CASH, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(Layout.cx, y + Layout.s(92), Graphics.FONT_TINY,
+            "pays " + Fmt.cash(game.contractReward()),
+            Graphics.TEXT_JUSTIFY_CENTER);
+
+        drawLegacyLine(dc, game, mRowY[2] + Layout.s(20));
+    }
+
+    private function drawLegacyLine(dc as Dc, game as GameState, y as Number) as Void {
+        if (game.legacy <= 0) {
+            return;
+        }
+        dc.setColor(Theme.TEXT_DIM, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(Layout.cx, y, Graphics.FONT_XTINY,
+            "LEGACY " + game.legacy.toString() + " - x"
+            + Fmt.rate(game.legacyBonus().toDouble()),
             Graphics.TEXT_JUSTIFY_CENTER);
     }
 

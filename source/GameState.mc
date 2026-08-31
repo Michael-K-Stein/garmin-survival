@@ -11,7 +11,7 @@ import Toybox.Time;
 class GameState {
 
     //! Bumped whenever the save layout changes incompatibly.
-    private const SAVE_VERSION = 2;
+    private const SAVE_VERSION = 3;
     private const SAVE_KEY = "timberline";
 
     // --- Persistent ------------------------------------------------------
@@ -27,6 +27,13 @@ class GameState {
     //! worker configuration is exactly the fiddling this game is avoiding.
     public var lvlWorkerSpeed as Number = 0;
     public var lvlWorkerCapacity as Number = 0;
+
+    //! Contracts are worked in order, so how many are finished is the whole
+    //! of the state: it is both the completed set and the index of the open
+    //! one.
+    public var contractsDone as Number = 0;
+    //! Legacy points, earned by moving camp. They never reset.
+    public var legacy as Number = 0;
 
     public var haptics as Boolean = true;
     public var lastSeen as Number = 0;
@@ -97,6 +104,193 @@ class GameState {
             total += areas[i].workers();
         }
         return total;
+    }
+
+    //! Mastery levels across every area, which is the one number that says
+    //! how well the whole valley is known.
+    function masteryTotal() as Number {
+        var total = 0;
+        for (var i = 0; i < areas.size(); i += 1) {
+            total += areas[i].mastery;
+        }
+        return total;
+    }
+
+    //! Machine levels across every area.
+    function machineTotal() as Number {
+        var total = 0;
+        for (var i = 0; i < areas.size(); i += 1) {
+            total += areas[i].machine.level;
+        }
+        return total;
+    }
+
+    function areasOpen() as Number {
+        var total = 0;
+        for (var i = 0; i < areas.size(); i += 1) {
+            if (areas[i].unlocked) {
+                total += 1;
+            }
+        }
+        return total;
+    }
+
+    // -------------------------------------------------------------- contracts
+
+    function contractCount() as Number {
+        return (Balance.GOAL_NAME as Array<String>).size();
+    }
+
+    //! True once the last contract has been signed off.
+    function contractsFinished() as Boolean {
+        return contractsDone >= contractCount();
+    }
+
+    function contractName() as String {
+        if (contractsFinished()) {
+            return "ALL SIGNED OFF";
+        }
+        return (Balance.GOAL_NAME as Array<String>)[contractsDone];
+    }
+
+    function contractTarget() as Float {
+        if (contractsFinished()) {
+            return 1.0;
+        }
+        return (Balance.GOAL_TARGET as Array<Float>)[contractsDone];
+    }
+
+    function contractReward() as Double {
+        if (contractsFinished()) {
+            return 0.0d;
+        }
+        return (Balance.GOAL_REWARD as Array<Float>)[contractsDone].toDouble();
+    }
+
+    //! Where the open contract stands, in the same units as its target. Every
+    //! kind reads state the game already keeps, so a contract costs nothing
+    //! to track between checks.
+    function contractProgress() as Float {
+        if (contractsFinished()) {
+            return 1.0;
+        }
+        var kind = (Balance.GOAL_KIND as Array<Number>)[contractsDone];
+        if (kind == Balance.GOAL_LIFETIME) {
+            return lifetime.toFloat();
+        }
+        if (kind == Balance.GOAL_CREW) {
+            return payroll().toFloat();
+        }
+        if (kind == Balance.GOAL_MACHINE) {
+            return machineTotal().toFloat();
+        }
+        if (kind == Balance.GOAL_AREAS) {
+            return areasOpen().toFloat();
+        }
+        if (kind == Balance.GOAL_MASTERY) {
+            return masteryTotal().toFloat();
+        }
+        if (kind == Balance.GOAL_GEAR) {
+            return (lvlSpeed + lvlCapacity + lvlCollect + lvlRegrow).toFloat();
+        }
+        return legacy.toFloat();
+    }
+
+    //! Cash contracts are shown as money; the rest are plain counts.
+    function contractIsCash() as Boolean {
+        if (contractsFinished()) {
+            return false;
+        }
+        return (Balance.GOAL_KIND as Array<Number>)[contractsDone]
+            == Balance.GOAL_LIFETIME;
+    }
+
+    //! Sign off every contract whose target has been passed. More than one
+    //! can fall at once - a big offline haul can carry two - so this loops.
+    private function checkContracts() as Void {
+        while (!contractsFinished() && contractProgress() >= contractTarget()) {
+            var reward = contractReward();
+            contractsDone += 1;
+            Events.emit(Events.CONTRACT_DONE, reward);
+            if (reward > 0.0d) {
+                earn(reward);
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------- legacy
+
+    //! Everything earned is cut by this. One multiplier, applied at the one
+    //! place money is created, so nothing can quietly escape it.
+    function legacyBonus() as Float {
+        return 1.0 + Balance.LEGACY_STEP * legacy;
+    }
+
+    //! What moving camp right now would pay. It is scored on this run's
+    //! earnings alone, not on the career total - points already banked are
+    //! kept, so what is being asked is only "was this camp worth leaving".
+    //! Square-rooted, so a run has to be four times as big to be worth twice
+    //! as much and there is no reward for bailing out early over and over.
+    function prestigeGain() as Number {
+        if (lifetime <= 0.0d) {
+            return 0;
+        }
+        return Math.floor(Math.sqrt(lifetime / Balance.PRESTIGE_SCALE)).toNumber();
+    }
+
+    function canPrestige() as Boolean {
+        return prestigeGain() > 0;
+    }
+
+    //! Lifetime this run needs before the next point lands, so the options
+    //! page can say how far off it is rather than just "no".
+    function prestigeNeeded() as Double {
+        var next = prestigeGain() + 1;
+        return (next * next).toDouble() * Balance.PRESTIGE_SCALE.toDouble();
+    }
+
+    //! Start the valley again. Cash, upgrades, crews, machines and unlocks
+    //! all go; mastery, contracts and legacy are what you take with you.
+    function prestige() as Boolean {
+        var gain = prestigeGain();
+        if (gain <= 0) {
+            return false;
+        }
+        legacy += gain;
+
+        var keptMastery = new [areas.size()] as Array<Number>;
+        var keptCredit = new [areas.size()] as Array<Float>;
+        for (var i = 0; i < areas.size(); i += 1) {
+            keptMastery[i] = areas[i].mastery;
+            keptCredit[i] = areas[i].credited;
+        }
+
+        cash = 0.0d;
+        lifetime = 0.0d;
+        lvlSpeed = 0;
+        lvlCapacity = 0;
+        lvlCollect = 0;
+        lvlRegrow = 0;
+        lvlWorkerSpeed = 0;
+        lvlWorkerCapacity = 0;
+        current = Balance.FOREST;
+        offlineCash = 0.0d;
+        offlineUnits = 0.0;
+        offlineSecs = 0;
+
+        areas = new [Balance.AREA_COUNT] as Array<Area>;
+        for (var i = 0; i < Balance.AREA_COUNT; i += 1) {
+            areas[i] = new Area(i);
+            areas[i].mastery = keptMastery[i];
+            areas[i].credited = keptCredit[i];
+            areas[i].syncMastery();
+        }
+        var start = Balance.PLAYER_START as Array<Number>;
+        player = new Actor(start[0].toFloat(), start[1].toFloat(), false);
+
+        Events.emit(Events.UPGRADE_PURCHASED, legacy.toDouble());
+        save();
+        return true;
     }
 
     // ------------------------------------------------------------------ costs
@@ -256,10 +450,15 @@ class GameState {
 
     // ---------------------------------------------------------------- economy
 
-    private function earn(amount as Double) as Void {
-        cash += amount;
-        lifetime += amount;
+    //! The one place money is created. Legacy is applied here rather than at
+    //! each source, so no income path can be added later that quietly skips
+    //! it. Returns what actually landed in the wallet.
+    private function earn(amount as Double) as Double {
+        var paid = amount * legacyBonus();
+        cash += paid;
+        lifetime += paid;
         Events.emit(Events.CASH_CHANGED, cash);
+        return paid;
     }
 
     //! Sell the current yard at the raw price. Returns the cash taken, so the
@@ -270,10 +469,13 @@ class GameState {
         if (value <= 0.0d) {
             return 0.0d;
         }
+        var units = here.stock;
         here.stock = 0.0;
-        earn(value);
-        Events.emit(Events.ITEM_SOLD, value);
-        return value;
+        var paid = earn(value);
+        // Selling raw still teaches you the ground.
+        here.credit(units);
+        Events.emit(Events.ITEM_SOLD, paid);
+        return paid;
     }
 
     //! Hands-off income from every unlocked board, in cash per minute.
@@ -288,7 +490,7 @@ class GameState {
                 total += board.incomePerMinute(speed, capacity, collect);
             }
         }
-        return total;
+        return total * legacyBonus();
     }
 
     // -------------------------------------------------------------- simulation
@@ -318,7 +520,8 @@ class GameState {
         for (var i = 0; i < areas.size(); i += 1) {
             var board = areas[i];
             if (board.unlocked) {
-                earned += board.tick(dt, speed, capacity, collect, boost);
+                earned += board.tick(dt, speed, capacity, collect, boost,
+                    i == current);
             }
         }
         if (earned > 0.0d) {
@@ -327,6 +530,8 @@ class GameState {
 
         player.setStats(playerSpeed(), playerCapacity(), playerCollect());
         player.tick(dt, area());
+
+        checkContracts();
 
         mSinceSaveSecs += dt;
         if (mSinceSaveSecs >= Balance.AUTOSAVE_SECS) {
@@ -344,6 +549,7 @@ class GameState {
         offlineCash = 0.0d;
         offlineUnits = 0.0;
         offlineSecs = 0;
+        checkContracts();
     }
 
     function hasOffline() as Boolean {
@@ -361,6 +567,8 @@ class GameState {
         var made = new [areas.size()] as Array<Number>;
         var hired = new [areas.size()] as Array<Number>;
         var open = new [areas.size()] as Array<Number>;
+        var mastered = new [areas.size()] as Array<Number>;
+        var credited = new [areas.size()] as Array<Double>;
         var left = new [areas.size() * Balance.NODES.size()] as Array<Number>;
         var regrow = new [areas.size() * Balance.NODES.size()] as Array<Number>;
 
@@ -372,6 +580,8 @@ class GameState {
             made[i] = board.machine.made;
             hired[i] = board.workers();
             open[i] = board.unlocked ? 1 : 0;
+            mastered[i] = board.mastery;
+            credited[i] = board.credited.toDouble();
             for (var n = 0; n < board.nodes.size(); n += 1) {
                 var slot = i * board.nodes.size() + n;
                 left[slot] = board.nodes[n].quantity.toNumber();
@@ -396,6 +606,10 @@ class GameState {
             "made" => made,
             "crew" => hired,
             "open" => open,
+            "mast" => mastered,
+            "mcred" => credited,
+            "goals" => contractsDone,
+            "legacy" => legacy,
             "left" => left,
             "regrow" => regrow,
             "haptics" => haptics,
@@ -435,6 +649,14 @@ class GameState {
         lvlWorkerSpeed = readNumber(data, "wspd", 0);
         lvlWorkerCapacity = readNumber(data, "wcap", 0);
         lastSeen = readNumber(data, "seen", 0);
+        contractsDone = readNumber(data, "goals", 0);
+        if (contractsDone < 0 || contractsDone > contractCount()) {
+            contractsDone = 0;
+        }
+        legacy = readNumber(data, "legacy", 0);
+        if (legacy < 0) {
+            legacy = 0;
+        }
 
         var flag = data["haptics"];
         haptics = (flag instanceof Lang.Boolean) ? flag : true;
@@ -445,6 +667,8 @@ class GameState {
         var made = numbers(data, "made");
         var hired = numbers(data, "crew");
         var open = numbers(data, "open");
+        var mastered = numbers(data, "mast");
+        var credited = numbers(data, "mcred");
         var left = numbers(data, "left");
         var regrow = numbers(data, "regrow");
 
@@ -455,6 +679,12 @@ class GameState {
             board.machine.batch = at(batches, i, 0.0);
             board.machine.made = at(made, i, 0.0).toNumber();
             board.unlocked = (i == Balance.FOREST) || at(open, i, 0.0) > 0.5;
+
+            var level = at(mastered, i, 0.0).toNumber();
+            board.mastery = (level > 0) ? level : 0;
+            var banked = at(credited, i, 0.0);
+            board.credited = (banked > 0.0) ? banked : 0.0;
+            board.syncMastery();
 
             var want = at(hired, i, 0.0).toNumber();
             if (want > Balance.WORKER_MAX) {
@@ -524,6 +754,7 @@ class GameState {
             if (processed > 0.0) {
                 offlineCash += board.machine.valueOf(processed);
                 board.machine.absorb(processed);
+                board.credit(processed);
                 // The machine ate the yard first; the rest came off the pile
                 // the crew brought in.
                 var fromYard = (processed < board.stock) ? processed : board.stock;
@@ -539,29 +770,6 @@ class GameState {
         if (offlineCash > 0.0d || offlineUnits > 0.0) {
             offlineSecs = elapsed;
         }
-    }
-
-    function wipe() as Void {
-        cash = 0.0d;
-        lifetime = 0.0d;
-        lvlSpeed = 0;
-        lvlCapacity = 0;
-        lvlCollect = 0;
-        lvlRegrow = 0;
-        lvlWorkerSpeed = 0;
-        lvlWorkerCapacity = 0;
-        current = Balance.FOREST;
-        offlineCash = 0.0d;
-        offlineUnits = 0.0;
-        offlineSecs = 0;
-        areas = new [Balance.AREA_COUNT] as Array<Area>;
-        for (var i = 0; i < Balance.AREA_COUNT; i += 1) {
-            areas[i] = new Area(i);
-        }
-        var start = Balance.PLAYER_START as Array<Number>;
-        player = new Actor(start[0].toFloat(), start[1].toFloat(), false);
-        Application.Storage.deleteValue(SAVE_KEY);
-        save();
     }
 
     // ---------------------------------------------------------------- helpers

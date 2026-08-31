@@ -34,7 +34,8 @@ needs two hands.
 The bottom button is contextual and never shows more than one choice:
 `COLLECT` when your hands are empty, `STORE` when they are not, `SELL $n`
 when there is a pile in the yard, `UNLOCK` when you are standing in a place
-you have not bought yet.
+you have not bought yet, and `RICH VEIN` when one is up - that one outranks
+everything else, because it is on a clock.
 
 ## The loop
 
@@ -60,6 +61,38 @@ there is no per-worker configuration to fiddle with, on purpose.
 
 Away from the watch, every unlocked board keeps producing for up to 8 hours at
 60% rate, and you get a card on the way back in.
+
+## Four things that outlast the upgrade curve
+
+The exponential cost curve outruns any wallet eventually. These are what is
+left to do when it does.
+
+**Rich veins.** Every 35-90 seconds one site on the board you are standing on
+comes in rich, marked by a ring that visibly runs out. Working it by hand pays
+4x per swing *without* draining the site faster, so it is the one thing in the
+game that beats the node ceiling. Crews walk straight past it. This is the
+only reason to have the watch out rather than in a pocket, and it is
+deliberately not modelled in the offline maths.
+
+**Mastery.** Every unit an area realises - sold raw or run through its machine
+- counts toward that area's mastery, a permanent multiplier on everything that
+area is worth. It is per area, it is never for sale at any price, and it
+survives moving camp. It is the ladder that keeps climbing after cash has
+stopped.
+
+**Contracts.** Eighteen of them, worked in order, one open at a time on its
+own management page. Each reads off state the game already keeps, so it costs
+a row in `Balance.mc` and nothing else, and each pays out once. They exist to
+put a next thing on screen at every point in the game, including the stretches
+between area unlocks where there was previously nothing to aim at.
+
+**Moving camp.** Once a run has earned $5M you can walk away from the valley
+and start it again. Cash, upgrades, crews, machines and unlocks all go;
+mastery, contracts and legacy points come with you, and every legacy point is
+a permanent +30% on everything you will ever earn again. Points are scored on
+that run's earnings and square-rooted, so a run has to be four times as big to
+be worth twice as much - there is no reward for bailing out early over and
+over.
 
 ## Building
 
@@ -101,7 +134,8 @@ source/
   Machine.mc         raw material in, cash out
   Balance.mc         every tunable number in the game
   GameView.mc        the board
-  ManageView.mc      the four management pages
+  ManageView.mc      the six management pages
+  PrestigeDelegate.mc  confirms moving camp
   WelcomeView.mc     what happened while you were away
   Scenery.mc         the ground, the horizon and the trails
   Theme.mc           colours and drawing primitives
@@ -128,6 +162,9 @@ worker while the app is shut.
 - `check_layout.py` reads the board out of `Balance.mc` and asserts every
   object clears the bezel, clears the contextual button, and does not overlap
   another object's tap radius.
-- `simulate_economy.py` replays the balance table with a greedy buyer and
-  reports how long each area takes to reach, failing if the curve collapses
-  or the areas come out of order.
+- `simulate_economy.py` replays the balance table with a buyer that spends on
+  whatever adds the most income per dollar, and reports how long each area
+  takes to reach. It fails if the curve collapses, if the areas come out of
+  order, or if any upgrade path is priced so badly against its siblings that
+  the buyer never touches it. `--report` adds the tail: levels bought,
+  mastery reached and contracts signed off by the ten-hour mark.

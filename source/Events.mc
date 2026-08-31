@@ -14,7 +14,10 @@ module Events {
         WORKER_HIRED,
         MACHINE_COMPLETED,
         UPGRADE_PURCHASED,
-        AREA_UNLOCKED
+        AREA_UNLOCKED,
+        CONTRACT_DONE,
+        MASTERY_GAINED,
+        RICH_VEIN
     }
 
     var listener as Method(name as Number, value as Double) or Null = null;

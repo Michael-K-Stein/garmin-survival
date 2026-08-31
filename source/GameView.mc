@@ -23,6 +23,9 @@ class GameView extends WatchUi.View {
     // A short-lived "+$120" over the yard, driven by Events.
     private var mToast as String = "";
     private var mToastLeft as Float = 0.0;
+    //! How long the current toast was given, so it can rise at the same pace
+    //! whether it is a sale or a contract.
+    private var mToastFor as Float = 1.4;
     // The area name, shown for a moment after a swipe.
     private var mLabelLeft as Float = 0.0;
 
@@ -31,6 +34,7 @@ class GameView extends WatchUi.View {
     const ACT_STORE = 1;
     const ACT_SELL = 2;
     const ACT_UNLOCK = 3;
+    const ACT_RICH = 4;
 
     function initialize() {
         View.initialize();
@@ -82,13 +86,27 @@ class GameView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
-    //! Money changing hands is worth a number floating over the yard; the
-    //! rest of the events are for other screens.
+    //! Anything the player would otherwise have to go and look for gets a
+    //! moment on the board: money changing hands, a contract signed off, a
+    //! mastery level, a vein coming in rich.
     function onGameEvent(name as Number, value as Double) as Void {
         if (name == Events.ITEM_SOLD) {
-            mToast = "+" + Fmt.cash(value);
-            mToastLeft = 1.4;
+            toast("+" + Fmt.cash(value), 1.4);
+        } else if (name == Events.CONTRACT_DONE) {
+            toast("CONTRACT +" + Fmt.cash(value), 2.4);
+            Haptics.confirm();
+        } else if (name == Events.MASTERY_GAINED) {
+            toast("MASTERY " + value.toNumber().toString(), 2.0);
+        } else if (name == Events.RICH_VEIN) {
+            toast("RICH VEIN", 1.8);
+            Haptics.tap();
         }
+    }
+
+    private function toast(text as String, secs as Float) as Void {
+        mToast = text;
+        mToastLeft = secs;
+        mToastFor = secs;
     }
 
     // ------------------------------------------------------------------ input
@@ -157,6 +175,11 @@ class GameView extends WatchUi.View {
         if (!game.area().unlocked) {
             return ACT_UNLOCK;
         }
+        // A rich vein outranks everything: it is on a clock, and the yard
+        // will still be there afterwards.
+        if (game.area().richNode >= 0 && !game.player.isFull()) {
+            return ACT_RICH;
+        }
         if (game.player.carry > 0.0) {
             return ACT_STORE;
         }
@@ -180,6 +203,15 @@ class GameView extends WatchUi.View {
             }
             Haptics.deny();
             return false;
+        }
+        if (what == ACT_RICH) {
+            var vein = game.area().richNode;
+            if (vein < 0) {
+                return false;
+            }
+            game.player.goToNode(vein);
+            Haptics.tap();
+            return true;
         }
         if (what == ACT_STORE) {
             game.player.goToStorage();
@@ -222,7 +254,7 @@ class GameView extends WatchUi.View {
             drawLockCard(dc, here);
         } else {
             for (var i = 0; i < here.nodes.size(); i += 1) {
-                drawNode(dc, here, here.nodes[i]);
+                drawNode(dc, here, i);
             }
             drawStorage(dc, here);
             drawMachine(dc, here);
@@ -250,6 +282,14 @@ class GameView extends WatchUi.View {
         // of the board nothing else ever occupies.
         // A locked board is showing its price; nothing else competes for
         // that space.
+        // What every camp before this one is still paying, if there was one.
+        if (game.legacy > 0) {
+            dc.setColor(Theme.WORKER, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(Layout.cx, Layout.s(58), Graphics.FONT_XTINY,
+                "LEGACY x" + Fmt.rate(game.legacyBonus().toDouble()),
+                Graphics.TEXT_JUSTIFY_CENTER);
+        }
+
         var perMin = game.incomePerMinute();
         if (perMin > 0.0d && !locked) {
             dc.setColor(Theme.CASH_DIM, Graphics.COLOR_TRANSPARENT);
@@ -260,9 +300,18 @@ class GameView extends WatchUi.View {
 
     //! Every area draws its nodes differently, because "how much is left" has
     //! to be readable at a glance and a tree does not shrink like a boulder.
-    private function drawNode(dc as Dc, area as Area, node as ResourceNode) as Void {
+    private function drawNode(dc as Dc, area as Area, index as Number) as Void {
+        var node = area.nodes[index];
         var x = Layout.s(node.x.toNumber());
         var y = Layout.s(node.y.toNumber());
+
+        // A rich vein is drawn as a ring that visibly runs out, because the
+        // whole point of it is that you have to get there before it does.
+        if (area.isRich(index)) {
+            Theme.ring(dc, x, y, Layout.s(30), Layout.s(3), 1.0, Theme.PANEL_HI);
+            Theme.ring(dc, x, y, Layout.s(30), Layout.s(3),
+                area.richLeftFraction(), Theme.WORKER);
+        }
 
         if (!node.hasStock()) {
             // A spent site: the stump, a full dim ring for the track, and the
@@ -472,7 +521,7 @@ class GameView extends WatchUi.View {
             return;
         }
         // Rises as it fades, so two sales in a row do not overlap.
-        var lift = Layout.s(((1.4 - mToastLeft) * 18).toNumber());
+        var lift = Layout.s(((mToastFor - mToastLeft) / mToastFor * 25).toNumber());
         dc.setColor(Theme.CASH, Graphics.COLOR_TRANSPARENT);
         dc.drawText(Layout.cx, Layout.s(236) - lift, Graphics.FONT_SMALL, mToast,
             Graphics.TEXT_JUSTIFY_CENTER);
@@ -489,6 +538,10 @@ class GameView extends WatchUi.View {
             label = "UNLOCK";
             fill = afford ? Theme.CASH_DIM : Theme.PANEL;
             text = afford ? Theme.TEXT : Theme.TEXT_DIM;
+        } else if (what == ACT_RICH) {
+            label = "RICH VEIN";
+            fill = Theme.WORKER;
+            text = Theme.BG;
         } else if (what == ACT_STORE) {
             label = "STORE";
         } else if (what == ACT_SELL) {

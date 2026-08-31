@@ -1,4 +1,5 @@
 import Toybox.Lang;
+import Toybox.Math;
 
 //! One compact board: its nodes, its yard, its machine and its crew. Areas
 //! are self-contained, which is what lets the offline maths run over all four
@@ -18,6 +19,20 @@ class Area {
     public var crew as Array<Actor>;
     //! Raw material sitting in the yard: sellable by hand, or machine feed.
     public var stock as Float = 0.0;
+
+    //! How well this ground is known. Mastery is earned by realising units
+    //! here - sold raw or run through the machine - and is a permanent
+    //! multiplier on what everything from this area fetches.
+    public var mastery as Number = 0;
+    //! Units banked toward the next mastery level.
+    public var credited as Float = 0.0;
+
+    //! The site currently coming in rich, or -1. Rich veins only ever appear
+    //! on the board the player is standing on, and only the player's own
+    //! swings are worth more for them.
+    public var richNode as Number = -1;
+    private var mRichLeft as Float = 0.0;
+    private var mRichGap as Float = 0.0;
 
     public var storageX as Float;
     public var storageY as Float;
@@ -44,6 +59,8 @@ class Area {
         var works = Balance.MACHINE as Array<Number>;
         machineX = works[0].toFloat();
         machineY = works[1].toFloat();
+
+        mRichGap = nextRichGap();
     }
 
     // ------------------------------------------------------------------ facts
@@ -60,8 +77,9 @@ class Area {
         return (Balance.NODE_KIND as Array<Number>)[id];
     }
 
+    //! What one unit from here fetches raw, mastery included.
     function unitValue() as Float {
-        return (Balance.RESOURCE_VALUE as Array<Float>)[id];
+        return (Balance.RESOURCE_VALUE as Array<Float>)[id] * masteryBonus();
     }
 
     function unlockCost() as Double {
@@ -74,6 +92,121 @@ class Area {
 
     function canHire() as Boolean {
         return crew.size() < Balance.WORKER_MAX;
+    }
+
+    // ---------------------------------------------------------------- mastery
+
+    function masteryBonus() as Float {
+        return 1.0 + Balance.MASTERY_STEP * mastery;
+    }
+
+    //! Units needed to go from the current mastery level to the next.
+    function masteryTarget() as Float {
+        return Balance.MASTERY_BASE
+            * Math.pow(Balance.MASTERY_GROWTH, mastery).toFloat();
+    }
+
+    function masteryProgress() as Float {
+        var target = masteryTarget();
+        return (target <= 0.0) ? 0.0 : credited / target;
+    }
+
+    //! Count units this area has realised, levelling mastery as they add up.
+    //! Division rather than a loop: a long stretch offline can cash in more
+    //! than one level at once and a per-level loop would trip the watchdog.
+    function credit(units as Float) as Void {
+        if (units <= 0.0) {
+            return;
+        }
+        credited += units;
+        var gained = 0;
+        while (credited >= masteryTarget() && gained < 64) {
+            credited -= masteryTarget();
+            mastery += 1;
+            gained += 1;
+        }
+        if (gained > 0) {
+            syncMastery();
+            Events.emit(Events.MASTERY_GAINED, mastery.toDouble());
+        }
+    }
+
+    //! Push the mastery multiplier into the machine, which prices product
+    //! without an Area in hand. Called after anything that moves mastery.
+    function syncMastery() as Void {
+        machine.valueBonus = masteryBonus();
+    }
+
+    // ------------------------------------------------------------ rich veins
+
+    //! True while `index` is the site coming in rich.
+    function isRich(index as Number) as Boolean {
+        return index >= 0 && index == richNode && mRichLeft > 0.0;
+    }
+
+    //! What a hand-worked swing at `index` is worth right now, as a
+    //! multiplier on the units taken. Crews never see anything but 1.0.
+    function richMultiplier(index as Number) as Float {
+        return isRich(index) ? Balance.RICH_MULTIPLIER : 1.0;
+    }
+
+    //! How much of the flare is left, 0..1, for the ring around the site.
+    function richLeftFraction() as Float {
+        if (mRichLeft <= 0.0) {
+            return 0.0;
+        }
+        return mRichLeft / Balance.RICH_SECS;
+    }
+
+    private function nextRichGap() as Float {
+        var span = Balance.RICH_GAP_SPAN.toNumber();
+        return Balance.RICH_GAP_MIN + (Math.rand() % span).abs();
+    }
+
+    //! Run the flare clock. Only called for the board the player is on, so an
+    //! area nobody is standing in never wastes a vein.
+    private function tickRich(dt as Float) as Void {
+        if (mRichLeft > 0.0) {
+            mRichLeft -= dt;
+            // A site that gets worked out mid-flare ends it; there is nothing
+            // left to be rich about.
+            var node = nodeAt(richNode);
+            if (mRichLeft <= 0.0 || node == null || !node.hasStock()) {
+                mRichLeft = 0.0;
+                richNode = -1;
+                mRichGap = nextRichGap();
+            }
+            return;
+        }
+        mRichGap -= dt;
+        if (mRichGap > 0.0) {
+            return;
+        }
+        var pick = -1;
+        var tries = 0;
+        while (pick < 0 && tries < nodes.size()) {
+            var candidate = (Math.rand() % nodes.size()).abs();
+            if (nodes[candidate].hasStock()) {
+                pick = candidate;
+            }
+            tries += 1;
+        }
+        if (pick < 0) {
+            // Whole board is regrowing; try again shortly rather than
+            // burning the flare on nothing.
+            mRichGap = 5.0;
+            return;
+        }
+        richNode = pick;
+        mRichLeft = Balance.RICH_SECS;
+        Events.emit(Events.RICH_VEIN, pick.toDouble());
+    }
+
+    //! Clear any flare, e.g. when the player walks off this board.
+    function clearRich() as Void {
+        richNode = -1;
+        mRichLeft = 0.0;
+        mRichGap = nextRichGap();
     }
 
     // -------------------------------------------------------------- the board
@@ -190,10 +323,18 @@ class Area {
 
     //! Advance the nodes, the crew and the machine. Returns the cash the
     //! machine earned this step, which the caller banks.
+    //! `playerHere` says whether this is the board on screen: rich veins only
+    //! flare where somebody can walk over and work them.
     function tick(dt as Float, speed as Float, capacity as Number,
-                  collect as Float, regrowBoost as Float) as Double {
+                  collect as Float, regrowBoost as Float,
+                  playerHere as Boolean) as Double {
         for (var i = 0; i < nodes.size(); i += 1) {
             nodes[i].tick(dt, regrowBoost);
+        }
+        if (playerHere) {
+            tickRich(dt);
+        } else if (richNode >= 0) {
+            clearRich();
         }
         for (var i = 0; i < crew.size(); i += 1) {
             var worker = crew[i];
@@ -217,6 +358,10 @@ class Area {
         }
         stock -= wanted;
         machine.absorb(wanted);
-        return machine.valueOf(wanted);
+        // Priced before crediting, so a level earned by this very batch pays
+        // from the next one rather than retroactively.
+        var earned = machine.valueOf(wanted);
+        credit(wanted);
+        return earned;
     }
 }

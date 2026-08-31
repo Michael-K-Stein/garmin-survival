@@ -96,6 +96,83 @@ module Balance {
     const COST_WORKER_SPEED = 500.0;
     const COST_WORKER_CAPACITY = 600.0;
 
+    // --- Rich veins -----------------------------------------------------
+    //! Every so often one site on the board the player is standing in comes
+    //! in rich. Working it by hand yields several times as much per swing
+    //! *without* draining the site any faster, which is the one thing in the
+    //! game that beats the node ceiling - and the only way to get it is to be
+    //! there and tap it. Crews walk straight past.
+    const RICH_MULTIPLIER = 4.0;
+    const RICH_SECS = 16.0;
+    //! Seconds between flares, picked uniformly from this range.
+    const RICH_GAP_MIN = 35.0;
+    const RICH_GAP_SPAN = 55.0;
+
+    // --- Area mastery ---------------------------------------------------
+    //! Every unit an area realises - sold raw or run through its machine -
+    //! counts toward that area's mastery. Mastery is a permanent multiplier
+    //! on everything that area is worth, it is per-area rather than global,
+    //! and it survives moving camp. It is the ladder that keeps climbing
+    //! after the cash curve has outrun the wallet.
+    const MASTERY_BASE = 900.0;
+    const MASTERY_GROWTH = 1.45;
+    const MASTERY_STEP = 0.10;
+
+    // --- Contracts ------------------------------------------------------
+    //! One open contract at a time, worked through in order, each a discrete
+    //! thing to aim at between the area unlocks. Progress is read off state
+    //! the game already keeps, so a contract costs a row in these tables and
+    //! nothing else.
+    const GOAL_LIFETIME = 0;    //! total cash ever earned
+    const GOAL_CREW = 1;        //! bodies on the payroll, all areas
+    const GOAL_MACHINE = 2;     //! machine levels, summed
+    const GOAL_AREAS = 3;       //! areas opened
+    const GOAL_MASTERY = 4;     //! mastery levels, summed
+    const GOAL_GEAR = 5;        //! the player's own upgrade levels, summed
+    const GOAL_LEGACY = 6;      //! legacy points held
+
+    const GOAL_NAME = [
+        "FIND YOUR FEET", "HIRE A HAND", "RAISE A MILL", "LEARN THE TRADE",
+        "OPEN THE QUARRY", "A FULL SHIFT", "SEASONED HANDS", "TWO TRADES",
+        "OPEN THE MINE", "MASTER OF TWO", "A REAL PAYROLL", "FIVE MILLION",
+        "OPEN THE FIELD", "INDUSTRIALIST", "MOVE CAMP", "MASTER OF THE VALLEY",
+        "FIVE CAMPS", "A BILLION"
+    ];
+    const GOAL_KIND = [
+        GOAL_GEAR, GOAL_CREW, GOAL_MACHINE, GOAL_MASTERY,
+        GOAL_AREAS, GOAL_CREW, GOAL_GEAR, GOAL_MACHINE,
+        GOAL_AREAS, GOAL_MASTERY, GOAL_CREW, GOAL_LIFETIME,
+        GOAL_AREAS, GOAL_MACHINE, GOAL_LEGACY, GOAL_MASTERY,
+        GOAL_LEGACY, GOAL_LIFETIME
+    ];
+    const GOAL_TARGET = [
+        3.0, 1.0, 1.0, 2.0,
+        2.0, 6.0, 15.0, 6.0,
+        3.0, 10.0, 14.0, 5000000.0,
+        4.0, 20.0, 1.0, 30.0,
+        5.0, 1000000000.0
+    ];
+    //! Paid once, on completion. Sized to buy roughly the next thing the
+    //! player was already saving for, not to replace playing for it.
+    const GOAL_REWARD = [
+        60.0, 150.0, 400.0, 900.0,
+        1800.0, 4000.0, 9000.0, 22000.0,
+        50000.0, 120000.0, 260000.0, 600000.0,
+        1400000.0, 3500000.0, 9000000.0, 22000000.0,
+        55000000.0, 140000000.0
+    ];
+
+    // --- Legacy (moving camp) -------------------------------------------
+    //! Walk away from the valley and start it again with what you learned:
+    //! cash, upgrades, crews, machines and unlocks all go, mastery and
+    //! contracts stay, and every legacy point is a permanent cut of
+    //! everything you will ever earn again.
+    //! Lifetime, this run, per legacy point squared: the first point lands
+    //! at $5M, the second at $20M, the fifth at $125M. Deliberately past the
+    //! mine, so nobody is offered a reset before they have seen the game.
+    const PRESTIGE_SCALE = 5000000.0;
+    const LEGACY_STEP = 0.30;
+
     // --- Economy --------------------------------------------------------
     //! cost = base * COST_GROWTH^level, per the spec's exponential curve.
     const COST_GROWTH = 1.55;

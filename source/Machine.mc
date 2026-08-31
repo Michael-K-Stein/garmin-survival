@@ -14,6 +14,10 @@ class Machine {
     //! Raw material banked toward the next visible batch, purely a readout.
     public var batch as Float = 0.0;
     public var made as Number = 0;
+    //! The area's mastery multiplier, pushed in by Area whenever it changes.
+    //! It lives here as well as on the area because valueOf() is what prices
+    //! offline production, and that runs without an Area in hand.
+    public var valueBonus as Float = 1.0;
 
     function initialize(areaId as Number) {
         area = areaId;
@@ -51,7 +55,7 @@ class Machine {
     //! What a given amount of raw material is worth once processed.
     function valueOf(units as Float) as Double {
         var raw = (Balance.RESOURCE_VALUE as Array<Float>)[area];
-        return (units * raw * valueMultiplier()).toDouble();
+        return (units * raw * valueMultiplier() * valueBonus).toDouble();
     }
 
     //! Cash per second when the machine is fed continuously.

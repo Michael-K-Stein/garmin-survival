@@ -104,15 +104,20 @@ class Actor {
                 retarget(area);
                 return;
             }
+            // A rich vein pays the player several units per unit actually
+            // pulled out of the ground, so it beats the node ceiling instead
+            // of just burning through it faster. Crews never get the bonus -
+            // being there is the whole reward.
+            var bonus = auto ? 1.0 : area.richMultiplier(target);
             var room = capacity - carry;
             var take = collectRate * dt;
-            if (take > room) {
-                take = room;
+            if (take > room / bonus) {
+                take = room / bonus;
             }
             take = node.take(take);
             if (take > 0.0) {
-                carry += take;
-                Events.emit(Events.RESOURCE_COLLECTED, take.toDouble());
+                carry += take * bonus;
+                Events.emit(Events.RESOURCE_COLLECTED, (take * bonus).toDouble());
             }
             if (isFull()) {
                 goToStorage();
