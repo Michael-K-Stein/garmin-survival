@@ -22,3 +22,4 @@ fi
 
 "$PYTHON" "$ROOT/tools/check_layout.py"
 "$PYTHON" "$ROOT/tools/simulate_economy.py"
+"$PYTHON" "$ROOT/tools/check_input.py"
