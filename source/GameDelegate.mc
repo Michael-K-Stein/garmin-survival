@@ -20,7 +20,17 @@ class GameDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    function onSelect() as Boolean {
+    //! Hangs off the raw key event, not onSelect: on Venu 2 hardware a screen
+    //! tap also arrives as the select behaviour, with no coordinates. An
+    //! onSelect override fired the button's action again after every real
+    //! tap - buying/unlocking regardless of which target was actually
+    //! touched, which made every tap look like it hit the same spot. onKey
+    //! (KEY_ENTER) is reached only by the physical select button, so the two
+    //! gestures stay apart.
+    function onKey(event as WatchUi.KeyEvent) as Boolean {
+        if (event.getKey() != WatchUi.KEY_ENTER) {
+            return false;
+        }
         mView.doAction(mView.action());
         return true;
     }
